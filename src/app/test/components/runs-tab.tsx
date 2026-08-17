@@ -7,6 +7,7 @@ import { testApi } from "@/api/test";
 import type { TestRunHeaderDto } from "@/api/test";
 import { extractUserMessage } from "@/lib/error-messages";
 import { ACC, Btn, Card, Empty, Loading, OutcomeBadge, StatusBadge } from "./primitives";
+import { useTestLookups, type TestLookupLabels } from "./use-test-lookups";
 
 const PAGE_SIZE = 25;
 
@@ -160,7 +161,7 @@ function RunReportPanel({ runId, onClose }: { runId: string; onClose: () => void
 }
 
 /* ─── Run row ─────────────────────────────────────────── */
-function RunRow({ run, onOpen }: { run: TestRunHeaderDto; onOpen: (id: string) => void }) {
+function RunRow({ run, onOpen, lookups }: { run: TestRunHeaderDto; onOpen: (id: string) => void; lookups: TestLookupLabels }) {
   const durationSec = run.durationMs != null ? (run.durationMs / 1000).toFixed(1) : null;
 
   return (
@@ -174,8 +175,8 @@ function RunRow({ run, onOpen }: { run: TestRunHeaderDto; onOpen: (id: string) =
         <code style={{ fontFamily: "monospace", fontSize: 12, color: ACC }}>{run.testKey}</code>
         <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginTop: 2 }}>{run.environmentKey}</div>
       </td>
-      <td style={{ padding: "11px 16px" }}><StatusBadge code={run.runStatusCode} /></td>
-      <td style={{ padding: "11px 16px" }}><OutcomeBadge code={run.outcomeCode} /></td>
+      <td style={{ padding: "11px 16px" }}><StatusBadge code={run.runStatusCode} label={lookups.nameByCode(run.runStatusCode)} /></td>
+      <td style={{ padding: "11px 16px" }}><OutcomeBadge code={run.outcomeCode} label={lookups.nameByCode(run.outcomeCode)} /></td>
       <td style={{ padding: "11px 16px" }}>
         <span style={{ fontSize: 12, color: run.findingCount > 0 ? "#fbbf24" : "rgba(255,255,255,0.28)" }}>{run.findingCount}</span>
       </td>
@@ -183,7 +184,7 @@ function RunRow({ run, onOpen }: { run: TestRunHeaderDto; onOpen: (id: string) =
         {durationSec ? `${durationSec}s` : "—"}
       </td>
       <td style={{ padding: "11px 16px" }}>
-        <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 4, background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.35)" }}>{run.triggerKindCode}</span>
+        <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 4, background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.35)" }}>{lookups.nameByCode(run.triggerKindCode) ?? run.triggerKindCode}</span>
         {run.isDryRun && <span style={{ marginLeft: 5, fontSize: 10, color: "rgba(255,255,255,0.25)" }}>dry-run</span>}
       </td>
       <td style={{ padding: "11px 16px", color: "rgba(255,255,255,0.28)", fontSize: 11.5 }}>
@@ -212,6 +213,7 @@ export function TabRuns({ initialScenarioId }: { initialScenarioId?: string }) {
     enabled: Boolean(initialScenarioId),
   });
 
+  const lookups = useTestLookups();
   const { data: outcomes } = useQuery({
     queryKey: ["test-lookups", "outcomes"],
     queryFn: () => testApi.lookups.outcomeStatuses(),
@@ -304,7 +306,7 @@ export function TabRuns({ initialScenarioId }: { initialScenarioId?: string }) {
               </tr>
             </thead>
             <tbody>
-              {runs.map((r) => <RunRow key={r.id} run={r} onOpen={setOpenRunId} />)}
+              {runs.map((r) => <RunRow key={r.id} run={r} onOpen={setOpenRunId} lookups={lookups} />)}
             </tbody>
           </table>
         )}

@@ -94,6 +94,8 @@ export interface ModuleShellProps {
   agentTitle?: string;
   onAgentSend?: (text: string) => Promise<string>;
   agentConversation?: AgentConversationController;
+  /** Sohbet sayfa içeriğinde zaten açıksa (yazarlık tezgâhı) pet kendi panelini açmaz. */
+  agentPanelHidden?: boolean;
 }
 
 const MOD = {
@@ -104,7 +106,7 @@ const MOD = {
   settings: { acc: "#10b981", dim: "rgba(16,185,129,0.13)", border: "rgba(16,185,129,0.20)", text: "#fff" },
 } as const;
 
-export function ModuleShell({ mod, name, tabs, tab, onTab, actions, children, showAgent, agentState, agentTitle, onAgentSend, agentConversation }: ModuleShellProps) {
+export function ModuleShell({ mod, name, tabs, tab, onTab, actions, children, showAgent, agentState, agentTitle, onAgentSend, agentConversation, agentPanelHidden }: ModuleShellProps) {
   const router   = useRouter();
   const { session, logout } = useAuthStore();
   const identity = getSessionIdentity(session, "Kullanıcı");
@@ -328,6 +330,7 @@ export function ModuleShell({ mod, name, tabs, tab, onTab, actions, children, sh
       {/* ── FLOATING AGENT — test modülünde varsayılan açık, prop ile kontrol edilebilir ── */}
       {(showAgent ?? mod === "test") && (
         <FloatingAgent
+          hidePanel={agentPanelHidden}
           conversation={agentConversation}
           state={agentState}
           title={agentTitle ?? (mod === "test" ? "Test Agent" : "PTN Agent")}

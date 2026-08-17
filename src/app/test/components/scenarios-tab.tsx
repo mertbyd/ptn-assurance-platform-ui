@@ -7,11 +7,12 @@ import { testApi } from "@/api/test";
 import type { TestScenarioDto } from "@/api/test";
 import { extractUserMessage } from "@/lib/error-messages";
 import { ACC, Btn, Card, Empty, Loading } from "./primitives";
+import { useTestLookups } from "./use-test-lookups";
 
 const PAGE_SIZE = 25;
 
 /* ─── State badge ─────────────────────────────────────── */
-function StateBadge({ scenario, stateLabel }: { scenario: TestScenarioDto; stateLabel?: string }) {
+function StateBadge({ scenario, stateLabel }: { scenario: TestScenarioDto; stateLabel?: string | null }) {
   if (scenario.quarantineUntil) {
     const expired = new Date(scenario.quarantineUntil) < new Date();
     return (
@@ -20,15 +21,18 @@ function StateBadge({ scenario, stateLabel }: { scenario: TestScenarioDto; state
       </span>
     );
   }
-  return <span style={{ padding: "2px 8px", borderRadius: 999, fontSize: 10.5, fontWeight: 650, background: "rgba(255,255,255,.06)", color: "rgba(255,255,255,.55)" }}>{stateLabel || scenario.stateId}</span>;
+  /* GUID EKRANA BASILMAZ: durum adı lookup satırından gelir. Satır çözülemezse kimliği
+   * göstermek yerine çözülemediğini söyleriz (CURRENT-0007 §4). */
+  return <span style={{ padding: "2px 8px", borderRadius: 999, fontSize: 10.5, fontWeight: 650, background: "rgba(255,255,255,.06)", color: "rgba(255,255,255,.55)" }}>{stateLabel ?? "durum çözülemedi"}</span>;
 }
 
 /* ─── Scenario row ────────────────────────────────────── */
-function ScenarioRow({ s, onRun, stateLabel }: { s: TestScenarioDto; onRun: (id: string) => void; stateLabel?: string }) {
+function ScenarioRow({ s, onRun, stateLabel }: { s: TestScenarioDto; onRun: (id: string) => void; stateLabel?: string | null }) {
   const [expanded, setExpanded] = useState(false);
   const [isWorking, setIsWorking] = useState(false);
   const [gateResult, setGateResult] = useState<{ isPublishable: boolean; failedGateCodes: string[]; warnings: string[] } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [quarantineUntil, setQuarantineUntil] = useState("");
   const [quarantineReason, setQuarantineReason] = useState(s.quarantineReason ?? "");
   const [scheduleCron, setScheduleCron] = useState(s.scheduleCron ?? "");
@@ -62,6 +66,28 @@ function ScenarioRow({ s, onRun, stateLabel }: { s: TestScenarioDto; onRun: (id:
     } catch (error) {
       setActionError(extractUserMessage(error, "Senaryo yayınlanamadı."));
     } finally { setIsWorking(false); }
+  }
+
+  /* Katalog eylemleri: yayından kaldırma ve silme. Silme yalnız hiç koşulmamış taslak
+   * için anlamlıdır; sunucu tarihsel senaryonun silinmesini kalıcı olarak reddeder ve
+   * hata mesajı kullanıcıya olduğu gibi gösterilir. */
+  async function deprecate() {
+    setIsWorking(true); setActionError(null);
+    try {
+      await testApi.scenarios.deprecate(s.id);
+      await queryClient.invalidateQueries({ queryKey: ["test-scenarios"] });
+    } catch (error) { setActionError(extractUserMessage(error, "Senaryo kullanımdan kaldırılamadı.")); }
+    finally { setIsWorking(false); }
+  }
+
+  async function remove() {
+    if (!confirmingDelete) { setConfirmingDelete(true); return; }
+    setIsWorking(true); setActionError(null);
+    try {
+      await testApi.scenarios.delete(s.id);
+      await queryClient.invalidateQueries({ queryKey: ["test-scenarios"] });
+    } catch (error) { setActionError(extractUserMessage(error, "Senaryo silinemedi.")); }
+    finally { setIsWorking(false); setConfirmingDelete(false); }
   }
 
   async function saveSchedule() {
@@ -145,6 +171,9 @@ function ScenarioRow({ s, onRun, stateLabel }: { s: TestScenarioDto; onRun: (id:
             <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 12 }}>
               <Btn label={isWorking ? "Kontrol ediliyor" : "Derle → onaya sun → kapıları değerlendir"} variant="accent-dim" small disabled={isWorking} onClick={() => void preparePublication()} />
               {gateResult?.isPublishable && <Btn label="Yayınla" variant="primary" small disabled={isWorking} onClick={() => void publish()} />}
+              <span style={{ flex: 1 }} />
+              <Btn label="Kullanımdan kaldır" small disabled={isWorking} onClick={() => void deprecate()} />
+              <Btn label={confirmingDelete ? "Silmeyi onayla" : "Sil"} variant="danger-dim" small disabled={isWorking} onClick={() => void remove()} />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,.06)" }}>
               <div style={{ display: "grid", gap: 7 }}><strong style={{ color: "rgba(255,255,255,.55)", fontSize: 11 }}>Zamanlama</strong><div style={{ display: "flex", gap: 6 }}><input value={scheduleCron} onChange={(e) => setScheduleCron(e.target.value)} placeholder="0 */2 * * *" style={{ flex: 1, height: 28, border: "1px solid rgba(255,255,255,.09)", borderRadius: 6, background: "rgba(255,255,255,.04)", color: "#ddd", padding: "0 8px", fontSize: 11 }} /><label style={{ color: "rgba(255,255,255,.42)", fontSize: 10.5, display: "flex", alignItems: "center", gap: 4 }}><input type="checkbox" checked={scheduleEnabled} onChange={(e) => setScheduleEnabled(e.target.checked)} />aktif</label><Btn label="Kaydet" small disabled={isWorking} onClick={() => void saveSchedule()} /></div></div>
@@ -186,11 +215,10 @@ export function TabScenarios({ onRunScenario }: { onRunScenario: (id: string) =>
     queryFn: () => testApi.scenarios.list({ skipCount: page * PAGE_SIZE, maxResultCount: PAGE_SIZE }),
   });
 
-  const { data: states } = useQuery({ queryKey: ["test-lookups", "scenario-states"], queryFn: () => testApi.lookups.scenarioStates() });
+  const lookups = useTestLookups();
 
   const normalizedFilter = filter.trim().toLocaleLowerCase("tr-TR");
   const scenarios = (data?.items ?? []).filter((scenario) => !normalizedFilter || `${scenario.scenarioKey} ${scenario.title} ${scenario.description ?? ""}`.toLocaleLowerCase("tr-TR").includes(normalizedFilter));
-  const stateLabels = new Map(states?.items.map((item) => [item.id, item.name]) ?? []);
   const totalCount = data?.totalCount ?? 0;
   const pageCount = Math.ceil(totalCount / PAGE_SIZE);
 
@@ -224,7 +252,7 @@ export function TabScenarios({ onRunScenario }: { onRunScenario: (id: string) =>
               </tr>
             </thead>
             <tbody>
-              {scenarios.map((s) => <ScenarioRow key={s.id} s={s} stateLabel={stateLabels.get(s.stateId)} onRun={onRunScenario} />)}
+              {scenarios.map((s) => <ScenarioRow key={s.id} s={s} stateLabel={lookups.nameById(s.stateId)} onRun={onRunScenario} />)}
             </tbody>
           </table>
         )}

@@ -17,7 +17,12 @@ import {
   type AuthoringSessionDto,
   type CreateAuthoringSessionDto,
 } from "@/api/test";
-import type { AgentConversationController, AgentConversationMessage, AgentState } from "@/components/ui/floating-agent";
+import type {
+  AgentConversationController,
+  AgentConversationMessage,
+  AgentState,
+  AgentToolActivity,
+} from "@/components/ui/floating-agent";
 import { extractUserMessage } from "@/lib/error-messages";
 
 type SessionStatus = "not_started" | "ready" | "running" | "input_required" | "approval_required" | "cancelled";
@@ -40,6 +45,25 @@ function nextMessage(messages: AgentConversationMessage[], role: AgentConversati
   return [...messages, { id: crypto.randomUUID(), role, text }];
 }
 
+/* Çalışan araçları bitmiş sayar. Değişecek bir şey yoksa AYNI dizi referansı döner; React
+ * o zaman render'ı atlar ve her `text_delta` için gereksiz güncelleme yapılmaz. */
+function settleTools(items: AgentToolActivity[]): AgentToolActivity[] {
+  if (!items.some((item) => item.status === "running")) return items;
+  return items.map((item) => (item.status === "running" ? { ...item, status: "done" as const } : item));
+}
+
+/* Ajan yüzeyinin hata kodları `Result<T>` zarfı taşımaz; kapalı bir kod kümesidir. Sunucudaki
+ * yakalayıcı tanımadığı HER hatayı `agent_state_conflict`e düşürdüğü için (create-server.ts),
+ * 409 hem "yanlış durumda mesaj" hem "eksik/geçersiz cevap kümesi" demektir. Metin ikisini de
+ * karşılar ve teknik ayrıntı vaat etmez (ADR-0023 §F). */
+function agentErrorMessage(code: string): string {
+  if (code === "session_forbidden") return "Bu agent oturumu başka bir kullanıcıya ait. Yeni oturum başlatın.";
+  if (code === "agent_state_conflict") return "Ajan bu durumda istek kabul etmiyor ya da kapalı cevap kümesi eksik. Bekleyen soruların hepsini seçip tekrar deneyin.";
+  if (code === "invalid_request") return "İstek biçimi kabul edilmedi. Seçimlerinizi kontrol edip tekrar deneyin.";
+  if (code === "budget_exceeded") return "Tur/token bütçesi doldu. Oturum hazır durumda; yeni bir mesajla devam edebilirsiniz.";
+  return "Agent yanıt veremedi.";
+}
+
 export function TestAgentProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const [session, setSession] = useState<AgentSessionDto | null>(null);
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>("not_started");
@@ -47,7 +71,7 @@ export function TestAgentProvider({ children }: Readonly<{ children: React.React
   const [questions, setQuestions] = useState<ClosedQuestion[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [proposal, setProposal] = useState<StepProposal | null>(null);
-  const [activeTools, setActiveTools] = useState<string[]>([]);
+  const [activeTools, setActiveTools] = useState<AgentToolActivity[]>([]);
   const [usage, setUsage] = useState({ turns: 0, tokens: 0 });
   const [error, setError] = useState<string | null>(null);
   const [authoringSession, setAuthoringSession] = useState<AuthoringSessionDto | null>(null);
@@ -79,6 +103,9 @@ export function TestAgentProvider({ children }: Readonly<{ children: React.React
   }, [session, sessionStatus]);
 
   const consumeEvent = useCallback((event: AgentEvent) => {
+    /* Sıradan türetme: `tool_call` dışındaki her olay, önceki aracın bittiğini kanıtlar. */
+    if (event.type !== "tool_call") setActiveTools(settleTools);
+
     if (event.type === "text_delta") {
       setMessages((items) => {
         const last = items.at(-1);
@@ -90,8 +117,15 @@ export function TestAgentProvider({ children }: Readonly<{ children: React.React
       return;
     }
     if (event.type === "tool_call") {
-      setActiveTools((items) => items.includes(event.name) ? items : [...items, event.name]);
-      setMessages((items) => nextMessage(items.map((item) => ({ ...item, streaming: false })), "system", `Kanıt aracı çalışıyor: ${event.name}`));
+      /* Araç çalışması mesaj balonu DEĞİLDİR: süreç, çıktının görsel ağırlığına
+       * çıkarılmaz; soluk aktivite satırında gösterilir. Aynı ad ardışık gelirse
+       * satır titremesin diye tekrar eklenmez. */
+      setActiveTools((items) => {
+        const last = items.at(-1);
+        if (last?.name === event.name && last.status === "running") return items;
+        return [...settleTools(items), { name: event.name, status: "running" }];
+      });
+      setMessages((items) => items.map((item) => ({ ...item, streaming: false })));
       return;
     }
     if (event.type === "input_required") {
@@ -118,8 +152,11 @@ export function TestAgentProvider({ children }: Readonly<{ children: React.React
       setMessages((items) => nextMessage(items.map((item) => ({ ...item, streaming: false })), "system", "Agent oturumu iptal edildi."));
       return;
     }
+    /* `error` oturumu ÖLDÜRMEZ: sunucu her iki hata kodunda da durumu `ready`'ye çeker.
+     * Bütçe hatası bu yüzden "oturum bitti" gibi gösterilmez. Sunucunun kendi metni
+     * kasıtlı jeneriktir; kullanıcıya kod bazlı kendi metnimizi yazarız (G-12). */
     setSessionStatus("ready");
-    setError(event.message);
+    setError(agentErrorMessage(event.code));
     setMessages((items) => items.map((item) => ({ ...item, streaming: false })));
   }, []);
 
@@ -148,8 +185,18 @@ export function TestAgentProvider({ children }: Readonly<{ children: React.React
         setError("Agent oturumu sunucudan düştü. Taslağınız korundu; yeniden gönderdiğinizde yeni oturum açılacak.");
         return;
       }
+      /* Oturum sahipliği sunucuda `ownerId` ile korunuyor; başkasının oturumuna dokunmak
+       * `403 session_forbidden` verir. Bu, düşen oturumdan farklı bir durumdur. */
+      if (requestError instanceof AgentHttpError && requestError.code === "session_forbidden") {
+        setSession(null);
+        setSessionStatus("not_started");
+        setError(agentErrorMessage(requestError.code));
+        return;
+      }
       setSessionStatus("ready");
-      setError(extractUserMessage(requestError, "Agent yanıt veremedi."));
+      setError(requestError instanceof AgentHttpError
+        ? agentErrorMessage(requestError.code)
+        : extractUserMessage(requestError, "Agent yanıt veremedi."));
     } finally {
       activeRequest.current = null;
       requestInFlight.current = false;

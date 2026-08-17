@@ -219,7 +219,10 @@ function ConnectionCard({ conn, testResult, isTesting, onTest, onEdit, onPassiva
 /* ═══════════════════════════════════════════════════════════════════
    ConnectionFormModal
 ═══════════════════════════════════════════════════════════════════ */
-function ConnectionFormModal({ editing, engines, onClose, onSaved }: {
+/* Yazarlık ekranı da bu modali kullanır: kullanıcı kanıt seçerken bağlantı envanteri boşsa
+ * modülü terk etmeden bağlantı ekleyebilmelidir. Form burada tanımlı kalır — çağıran ekran
+ * kendi kopyasını kurmaz. */
+export function ConnectionFormModal({ editing, engines, onClose, onSaved }: {
   editing: DatabaseConnectionDto | null;
   engines: LookupCommonDto[];
   onClose: () => void;

@@ -1,5 +1,6 @@
 "use client";
 import { Loader2 } from "lucide-react";
+import { useState } from "react";
 
 export const ACC = "#f0a020"; // amber
 
@@ -35,27 +36,57 @@ export function CardHead({ title, right }: { title: string; right?: React.ReactN
   );
 }
 
-export function Btn({ label, icon: Icon, onClick, variant = "ghost", disabled, loading, small }: {
+/* Buton dili tek yerde tanımlıdır: yükseklik, kenarlık ve yazı ağırlığı varyantlar arasında
+ * aynı; ayrışan tek şey renktir. Etkileşim durumları (hover/active/odak) inline stille
+ * yazılamadığı için state ile taşınır — depoda `connections-page-view` de aynı deseni
+ * kullanıyor. Odak halkası bilinçli olarak korunur: `all: unset` onu siliyordu. */
+export function Btn({ label, icon: Icon, onClick, variant = "ghost", disabled, loading, small, block }: {
   label: string; icon?: React.ElementType; onClick?: () => void;
   variant?: "primary" | "ghost" | "accent-dim" | "danger-dim";
-  disabled?: boolean; loading?: boolean; small?: boolean;
+  disabled?: boolean; loading?: boolean; small?: boolean; block?: boolean;
 }) {
-  const h = small ? 28 : 32; const px = small ? 10 : 12; const fs = small ? 11.5 : 12.5;
-  const styles: Record<string, React.CSSProperties> = {
-    primary:      { background: ACC, color: "#0d0f14", boxShadow: `0 2px 12px ${ACC}44`, fontWeight: 700 },
-    ghost:        { background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.45)", border: "1px solid rgba(255,255,255,0.08)" },
-    "accent-dim": { background: `${ACC}1a`, color: ACC, border: `1px solid ${ACC}33` },
-    "danger-dim": { background: "rgba(239,68,68,0.07)", color: "#f87171", border: "1px solid rgba(239,68,68,0.14)" },
+  const [hover, setHover] = useState(false);
+  const [active, setActive] = useState(false);
+  const isOff = Boolean(disabled || loading);
+  const h = small ? 26 : 32;
+  const styles: Record<string, { bg: string; color: string; border: string; hoverBg: string }> = {
+    primary:      { bg: ACC, color: "#0d0f14", border: `1px solid ${ACC}`, hoverBg: "#ffb43a" },
+    ghost:        { bg: "rgba(255,255,255,0.045)", color: "rgba(255,255,255,0.62)", border: "1px solid rgba(255,255,255,0.10)", hoverBg: "rgba(255,255,255,0.09)" },
+    "accent-dim": { bg: `${ACC}16`, color: ACC, border: `1px solid ${ACC}3d`, hoverBg: `${ACC}26` },
+    "danger-dim": { bg: "rgba(239,68,68,0.09)", color: "#f87171", border: "1px solid rgba(239,68,68,0.22)", hoverBg: "rgba(239,68,68,0.16)" },
   };
+  const tone = styles[variant];
   return (
-    <button onClick={onClick} disabled={disabled || loading} style={{ all: "unset", cursor: disabled || loading ? "not-allowed" : "pointer", display: "inline-flex", alignItems: "center", gap: 5, height: h, padding: `0 ${px}px`, borderRadius: 7, fontSize: fs, fontWeight: 580, transition: "opacity 130ms ease", opacity: disabled ? 0.4 : 1, ...styles[variant] }}>
-      {loading ? <Loader2 size={12} style={{ animation: "spin .8s linear infinite" }} /> : Icon ? <Icon size={12} strokeWidth={1.9} /> : null}
+    <button
+      onClick={onClick}
+      disabled={isOff}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => { setHover(false); setActive(false); }}
+      onPointerDown={() => setActive(true)}
+      onPointerUp={() => setActive(false)}
+      style={{
+        display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+        width: block ? "100%" : undefined,
+        height: h, padding: small ? "0 9px" : "0 12px", borderRadius: 7,
+        background: isOff ? tone.bg : hover ? tone.hoverBg : tone.bg,
+        border: tone.border, color: tone.color,
+        font: `${small ? 650 : 620} ${small ? 11 : 12.5}px/1 inherit`,
+        cursor: isOff ? "not-allowed" : "pointer",
+        opacity: isOff ? 0.38 : 1,
+        transform: active && !isOff ? "translateY(1px)" : "none",
+        transition: "background 120ms ease, opacity 120ms ease, transform 80ms ease",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {loading ? <Loader2 size={12} style={{ animation: "spin .8s linear infinite", flexShrink: 0 }} /> : Icon ? <Icon size={12} strokeWidth={2} style={{ flexShrink: 0 }} /> : null}
       {label}
     </button>
   );
 }
 
-export function OutcomeBadge({ code }: { code?: string | null }) {
+/* Rozetin RENGİ kapalı koddan, YAZISI lookup satırından gelir. `label` verilmezse koda
+ * düşülür; bu yalnız lookup henüz yüklenmemişken olur (CURRENT-0007 §4). */
+export function OutcomeBadge({ code, label }: { code?: string | null; label?: string | null }) {
   if (!code) return <span style={{ fontSize: 11, color: "rgba(255,255,255,0.28)" }}>—</span>;
   const m: Record<string, [string, string]> = {
     Passed:    ["rgba(74,222,128,0.12)",  "#4ade80"],
@@ -65,10 +96,10 @@ export function OutcomeBadge({ code }: { code?: string | null }) {
     Skipped:   ["rgba(255,255,255,0.06)", "#888"],
   };
   const [bg, color] = m[code] ?? ["rgba(255,255,255,0.06)", "#aaa"];
-  return <span style={{ padding: "2px 8px", borderRadius: 999, fontSize: 11, fontWeight: 650, background: bg, color }}>{code}</span>;
+  return <span style={{ padding: "2px 8px", borderRadius: 999, fontSize: 11, fontWeight: 650, background: bg, color }}>{label ?? code}</span>;
 }
 
-export function StatusBadge({ code }: { code: string }) {
+export function StatusBadge({ code, label }: { code: string; label?: string | null }) {
   const m: Record<string, string> = {
     pending: "#fbbf24", running: "#60a5fa", completed: "#4ade80",
     failed: "#f87171", cancelled: "#888",
@@ -77,7 +108,7 @@ export function StatusBadge({ code }: { code: string }) {
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: m[lc] ?? "#aaa" }}>
       <span style={{ width: 5, height: 5, borderRadius: "50%", background: m[lc] ?? "#aaa", animation: lc === "running" ? "dotP 1.8s ease-in-out infinite" : "none" }} />
-      {code}
+      {label ?? code}
     </span>
   );
 }

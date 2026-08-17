@@ -8,6 +8,8 @@ import { TestAgentProvider, useTestAgent } from "@/features/test-agent/test-agen
 import { TabScenarios } from "./components/scenarios-tab";
 import { TabRuns } from "./components/runs-tab";
 import { AuthoringTab } from "./components/authoring-tab";
+import { TabFindings } from "./components/findings-tab";
+import { TabEnvironments } from "./components/environments-tab";
 
 const GS = `
 @keyframes fadeUp { from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);} }
@@ -44,10 +46,15 @@ function TestWorkspace() {
           { key: "authoring", label: "Agent ile Yazarlık" },
           { key: "scenarios", label: "Senaryolar" },
           { key: "runs",      label: "Koşumlar" },
+          { key: "findings",  label: "Bulgular" },
+          { key: "environments", label: "Ortamlar" },
         ]}
         tab={tab}
         onTab={setTab}
         agentConversation={conversation}
+        /* Yazarlık tezgâhında sohbet orta sütunda sabit duruyor; pet aynı sohbeti ikinci
+         * kez açmamalı. Diğer sekmelerde tek sohbet yüzeyi petin panelidir. */
+        agentPanelHidden={tab === "authoring"}
       >
         {tab === "authoring" && <AuthoringTab />}
         {tab === "scenarios" && (
@@ -58,6 +65,8 @@ function TestWorkspace() {
         {tab === "runs" && (
           <TabRuns initialScenarioId={runScenarioId} />
         )}
+        {tab === "findings" && <TabFindings />}
+        {tab === "environments" && <TabEnvironments />}
       </ModuleShell>
     </>
   );

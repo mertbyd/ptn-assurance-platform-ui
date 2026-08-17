@@ -11,6 +11,10 @@ export type SpecSourcePage =
   components["schemas"]["Volo.Abp.Application.Dtos.PagedResultDtoOfPtn.ApiContractChecker.Dtos.Sources.SpecSourceDto"];
 export type SnapshotPage =
   components["schemas"]["Volo.Abp.Application.Dtos.PagedResultDtoOfPtn.ApiContractChecker.Dtos.Snapshots.SpecSnapshotHeaderDto"];
+/* Snapshot satırının kendisi: yazarlık tezgâhı da bu tipi kullanır. Tip Swagger'dan
+ * üretilir; elle yazılmış bir ikinci sürüm tutmak alan kaymasına davetiyedir. */
+export type SpecSnapshotHeaderDto =
+  components["schemas"]["Ptn.ApiContractChecker.Dtos.Snapshots.SpecSnapshotHeaderDto"];
 export type SpecSnapshotDto = components["schemas"]["Ptn.ApiContractChecker.Dtos.Snapshots.SpecSnapshotDto"];
 export type ConfigureSpecDocumentMonitoringDto =
   components["schemas"]["Ptn.ApiContractChecker.Dtos.Sources.ConfigureSpecDocumentMonitoringDto"];

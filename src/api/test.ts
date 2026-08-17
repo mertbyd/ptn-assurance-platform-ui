@@ -416,10 +416,86 @@ export interface GroundCandidateRequestDto {
   profileKey: string;
   specSnapshotId: string;
   connectionId: string;
+  /* Verilirse sunucu adayları daraltıp o referansın tanımını döner; verilmezse aday
+   * listesi ve kapalı sorular gelir (`GroundRequestDto` ile aynı isteğe bağlılık). */
+  operationReferenceId?: string | null;
+  tableReferenceId?: string | null;
   stepIntent: string;
   responseFormat: "concise" | "detailed";
   hasExclusiveSandbox: boolean;
   sessionId?: string | null;
+}
+
+/* `ground` bu ailenin TEK tipli üyesidir: yazarlık ekranı opak referansları buradan alır.
+ * Alanlar `Ptn.TestModule.Application.Contracts/Dtos/Bridge/**` ile hizalıdır. Yalnız
+ * ekranın okuduğu alanlar modellenmiştir; gövde daha geniştir (footprint, requestExample,
+ * resourceLink) ve G-03'te üretilmiş şemayla tamamlanacaktır. */
+export interface GroundResultDto {
+  responseFormat: string;
+  decisionCode: string;
+  criticalFactCode: string;
+  coverage: CoverageReportDto;
+  operationBinding?: OperationBindingDto | null;
+  tableDescription?: TableDescriptionDto | null;
+  questions: ClosedQuestionDto[];
+  sessionId?: string | null;
+  stepCount: number;
+  pendingQuestionCodes: string[];
+}
+
+export interface CoverageReportDto {
+  requiredConcepts: string[];
+  boundConcepts: string[];
+  unboundConcepts: string[];
+  boundCount: number;
+  requiredCount: number;
+  boundRatio: number;
+}
+
+export interface OperationBindingDto {
+  outcomeCode: string;
+  suggestions: OperationSuggestionDto[];
+}
+
+/* Opak `referenceId` ile insan-okur `sourceMethod`/`sourcePath` YALNIZ burada bir arada
+ * bulunur; onay kartı operasyonu bu eşleşmeyle çözer. Ajan operasyon adı uyduramaz. */
+export interface OperationSuggestionDto {
+  referenceId: string;
+  sourceOperationId?: string | null;
+  sourceMethod: string;
+  sourcePath: string;
+  score: number;
+}
+
+/* Tablo tanımı kendi kapalı kümelerini taşır: `allowedMatchers` ve `assertableFields`
+ * sunucudan gelir. Ekran matcher listesini SABİTLEMEZ — kapalı küme kaynağı burasıdır. */
+export interface TableDescriptionDto {
+  dbSchemaName: string;
+  tableName: string;
+  columns: TableColumnDto[];
+  primaryKey?: TableKeyDto | null;
+  uniqueIndexes: TableKeyDto[];
+  lintWarnings: SchemaLintWarningDto[];
+  tableReferenceId: string;
+  assertableFields: string[];
+  allowedMatchers: string[];
+  keyCandidates: string[];
+}
+
+export interface TableColumnDto {
+  name: string;
+  canonicalDataTypeCode: string;
+  isNullable: boolean;
+}
+
+export interface TableKeyDto {
+  name: string;
+  columns: string[];
+}
+
+export interface SchemaLintWarningDto {
+  warningCode: string;
+  columnName?: string | null;
 }
 
 export interface AgentProfileRequestDto {
@@ -472,7 +548,7 @@ export const testApi = {
    * ve `Applied` alanı önerinin uygulanmadığını taşır: ekran "uygula" değil
    * "incele ve dışa aktar" olarak kurulur (ARCH-0006 §2.3). */
   bridge: {
-    ground: (data: GroundCandidateRequestDto) => apiClient.post<unknown, GroundCandidateRequestDto>("/api/test-module/bridge/ground", data),
+    ground: (data: GroundCandidateRequestDto) => apiClient.post<GroundResultDto, GroundCandidateRequestDto>("/api/test-module/bridge/ground", data),
     explain: (data: Record<string, unknown>) => apiClient.post<unknown>("/api/test-module/bridge/explain", data),
     validate: (data: Record<string, unknown>) => apiClient.post<unknown>("/api/test-module/bridge/validate", data),
     knowledge: (data: Record<string, unknown>) => apiClient.post<unknown>("/api/test-module/bridge/knowledge", data),
